@@ -1,5 +1,5 @@
 # Multi-Modal Diagnosis of Alzheimer's Disease using Interpretable Graph Convolutional Networks
- A preliminary implementation of SGCN. In our experimentation, SGCN learned the sparse regional importance probability to find signature regions of interest (ROIs), and the connective importance probability to reveal disease-specific brain network connections.
+ A preliminary implementation of the multi-modal sparse interpretable GCN framework (SGCN) for the detection of Alzheimer's disease (AD). In our experimentation, SGCN learned the sparse regional importance probability to find signature regions of interest (ROIs), and the connective importance probability to reveal disease-specific brain network connections.
 
 ## Usage
 ### Setup
