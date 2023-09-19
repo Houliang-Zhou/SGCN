@@ -23,7 +23,6 @@ from kernel.global_attention import GlobalAttentionNet
 from kernel.set2set import Set2SetNet
 from kernel.sort_pool import SortPool
 from sgcn_data import loadBrainImg, ADNIDataset
-import sgcn_hyperparameters as hp
 from utils import create_subgraphs, return_prob
 from util_gdc import preprocess_diffusion
 
@@ -55,10 +54,25 @@ parser.add_argument('--disease_id', type=int, default=0,
 
 parser.add_argument('--isTestAdnitype', action='store_true', default=False,
                     help='is TestAdnitype')
+parser.add_argument('--isShareAdj', action='store_true', default=False,
+                    help='share adj between subjects')
+parser.add_argument('--isInfo_Score', action='store_true', default=True,
+                    help='use data with scores')
+parser.add_argument('--isSeperatedGender', action='store_true', default=False,
+                    help='separate data by gender')
+parser.add_argument('--selected_gender', type=int, default=1)
 parser.add_argument('--isShowValResult', action='store_true', default=True,
                     help='is ShowValResult')
 parser.add_argument('--adnitype_id', type=int, default=0)
 parser.add_argument('--disease_id4Adnitype', type=int, default=1)
+parser.add_argument('--num_features', type=int, default=3)
+parser.add_argument('--lamda_x_l1', type=float, default=0.1)
+parser.add_argument('--lamda_e_l1', type=float, default=0.1)
+parser.add_argument('--lamda_x_ent', type=float, default=0.1)
+parser.add_argument('--lamda_e_ent', type=float, default=0.1)
+parser.add_argument('--lamda_mi', type=float, default=1.0)
+parser.add_argument('--lamda_ce', type=float, default=1.0)
+parser.add_argument('--pooling', type=str, default='concat')
 
 # GNN settings.
 parser.add_argument('--model', type=str, default='SGCN_GCN',
@@ -67,7 +81,7 @@ parser.add_argument('--layers', type=int, default=3)
 parser.add_argument('--hiddens', type=int, default=10)
 
 # Training settings.
-parser.add_argument('--epochs', type=int, default=100)
+parser.add_argument('--epochs', type=int, default=200)
 parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--lr', type=float, default=1E-3)
 parser.add_argument('--lr_decay_factor', type=float, default=0.5)
@@ -155,29 +169,30 @@ for dataset_name, Net in product(datasets, nets):
         result_path = os.path.join(args.res_dir, '%s.npy'%(result_file_name))
         max_nodes_per_hop = None
         data_path = './data/brain_image/knn/%d/'%(args.knn)
-        adni_dataset = loadBrainImg(disease_id=args.disease_id, isShareAdj=hp.isShareAdj, isInfo_Score=hp.isInfo_Score,
-                               isSeperatedGender=hp.isSeperatedGender, selected_gender=hp.selected_gender,
+        adni_dataset = loadBrainImg(disease_id=args.disease_id, isShareAdj=args.isShareAdj, isInfo_Score=args.isInfo_Score,
+                               isSeperatedGender=args.isSeperatedGender, selected_gender=args.selected_gender,
                                     data_path=data_path)
         if args.isTestAdnitype:
             dataset = adni_dataset
         else:
             dataset = ADNIDataset('./', 'SGCN', adni_dataset)
-        model = Net(hp.H_0, hidden, hidden, hp.H_3)
+        model = Net(dataset, num_layers, hidden, num_features=args.num_features, pooling=args.pooling)
         loss, acc, std = cross_val_method(
             args,
             dataset,
             model,
             folds=args.fold,
             epochs=args.epochs,
-            batch_size=hp.batch_size,
-            lr=hp.learning_rate,
+            batch_size=args.batch_size,
+            lr=args.lr,
             lr_decay_factor=args.lr_decay_factor,
             lr_decay_step_size=args.lr_decay_step_size,
             weight_decay=0,
             device=device,
             logger=logger,
             result_path=result_path,
-            pre_transform=None)
+            pre_transform=None,
+            result_file_name=result_file_name)
         if loss < best_result[0]:
             best_result = (loss, acc, std)
             best_hyper = (num_layers, hidden)

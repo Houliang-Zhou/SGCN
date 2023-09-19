@@ -111,7 +111,7 @@ class SGCN_GCN_CLUSTERLABEL(torch.nn.Module):
         else:
             return x_feat_prob, edge_weight_prob, x_prob, edge_prob
 
-    def loss_probability(self, x, edge_index, edge_weight, hp, eps=1e-6):
+    def loss_probability(self, x, edge_index, edge_weight, args, eps=1e-6):
         _, _, x_prob, edge_prob = self.cal_probability(x, edge_index, edge_weight)
 
         x_prob = torch.sigmoid(x_prob)
@@ -139,7 +139,7 @@ class SGCN_GCN_CLUSTERLABEL(torch.nn.Module):
             snps_prob * torch.log(snps_prob + eps) + (1 - snps_prob) * torch.log((1 - snps_prob) + eps)) / all_num
 
         # sum_loss = (f_sum_loss+e_sum_loss+f_entrp_loss+e_entrp_loss)/4
-        loss_prob = hp.lamda_x_l1 * f_sum_loss + hp.lamda_e_l1 * e_sum_loss + hp.lamda_x_ent * f_entrp_loss + hp.lamda_e_ent * e_entrp_loss + hp.lamda_x_l1 * snps_sum_loss + hp.lamda_x_ent * snps_entrp_loss
+        loss_prob = args.lamda_x_l1 * f_sum_loss + args.lamda_e_l1 * e_sum_loss + args.lamda_x_ent * f_entrp_loss + args.lamda_e_ent * e_entrp_loss + args.lamda_x_l1 * snps_sum_loss + args.lamda_x_ent * snps_entrp_loss
 
         return loss_prob
 

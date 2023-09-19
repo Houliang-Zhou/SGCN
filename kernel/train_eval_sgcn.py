@@ -1,5 +1,5 @@
 import time
-
+import os
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -17,7 +17,6 @@ from sklearn.metrics import f1_score
 from dataloader import DataLoader  # replace with custom dataloader to handle subgraphs
 # from torch_geometric.loader import DataLoader
 from imbalanced import ImbalancedDatasetSampler
-import sgcn_hyperparameters as hp
 from sgcn_data import *
 
 def cross_validation_with_val_set(args,dataset,
@@ -32,7 +31,8 @@ def cross_validation_with_val_set(args,dataset,
                                       device,
                                       logger=None,
                                       result_path=None,
-                                      pre_transform=None):
+                                      pre_transform=None,
+                                      result_file_name=None):
     test_data = []
     if args.isTestAdnitype:
         train_data, test_data = separate_data_adnitype(dataset, disease_id=args.disease_id4Adnitype,
@@ -42,6 +42,7 @@ def cross_validation_with_val_set(args,dataset,
         dataset = train_data
     score_result = []
     test_losses, accs, durations = [], [], []
+    val_losses = []
     count = 1
     for fold, (train_idx, test_idx, val_idx) in enumerate(
             zip(*k_fold(dataset, folds))):
@@ -50,9 +51,11 @@ def cross_validation_with_val_set(args,dataset,
 
         train_idx = torch.cat([train_idx], 0)  # combine train and val
         train_dataset = dataset[train_idx]
-        test_dataset = dataset[val_idx]
+        val_dataset = dataset[val_idx]
+        test_dataset = dataset[test_idx]
         train_loader = DataLoader(train_dataset, batch_size, shuffle=False, sampler=ImbalancedDatasetSampler(
             train_dataset))  # True  False, sampler=ImbalancedDatasetSampler(train_dataset)
+        val_loader = DataLoader(val_dataset, batch_size, shuffle=False)
         test_loader = DataLoader(test_dataset, batch_size, shuffle=False)
 
         model.to(device).reset_parameters()
@@ -62,17 +65,20 @@ def cross_validation_with_val_set(args,dataset,
         score_result_epoch = []
         t_start = time.perf_counter()
 
+        best_val_loss=np.inf
         pbar = tqdm(range(1, epochs + 1), ncols=70)
         for epoch in pbar:
-            train_loss = train(model, optimizer, train_loader, device)
-            test_losses.append(eval_loss(model, test_loader, device))
-            accs.append(eval_acc(model, test_loader, device))
+            train_loss = train(model, optimizer, train_loader, device, args)
+            test_losses.append(eval_loss(model, test_loader, device, args))
+            val_losses.append(eval_loss(model, val_loader, device, args))
+            accs.append(eval_acc(model, test_loader, device, args))
             true_label, pred_label, acuracy, auc, test_f1, sensitivity, specificity = eval_scores(model, test_loader,
-                                                                                                  device)
+                                                                                                  device, args)
             eval_info = {
                 'fold': fold,
                 'epoch': epoch,
                 'train_loss': train_loss,
+                'val_loss': val_losses[-1],
                 'test_loss': test_losses[-1],
                 'test_acc': accs[-1],
                 'test_auc': auc,
@@ -80,11 +86,11 @@ def cross_validation_with_val_set(args,dataset,
                 'test_sen': sensitivity,
                 'test_spe': specificity,
             }
-            log = 'Fold: %d, train_loss: %0.4f, test_loss: %0.4f, test_acc: %0.4f' % (
-                fold, eval_info["train_loss"], eval_info["test_loss"], eval_info["test_acc"]
+            log = 'Fold: %d, train_loss: %0.4f, val_loss: %0.4f, test_loss: %0.4f, test_acc: %0.4f' % (
+                fold, eval_info["train_loss"], eval_info["val_loss"], eval_info["test_loss"], eval_info["test_acc"]
             )
-            print_log = 'Fold: %d, epoch:%d, train_loss: %0.4f, test_loss: %0.4f, test_acc: %0.4f, test_auc: %0.4f, test_f1: %0.4f, test_sen: %0.4f, test_spe: %0.4f' % (
-                fold, eval_info["epoch"], eval_info["train_loss"], eval_info["test_loss"], eval_info["test_acc"],
+            print_log = 'Fold: %d, epoch:%d, train_loss: %0.4f, val_loss: %0.4f, test_loss: %0.4f, test_acc: %0.4f, test_auc: %0.4f, test_f1: %0.4f, test_sen: %0.4f, test_spe: %0.4f' % (
+                fold, eval_info["epoch"], eval_info["train_loss"], eval_info["val_loss"], eval_info["test_loss"], eval_info["test_acc"],
                 eval_info["test_auc"], eval_info["test_f1"]
                 , eval_info["test_sen"], eval_info["test_spe"]
             )
@@ -99,6 +105,10 @@ def cross_validation_with_val_set(args,dataset,
             score_result_epoch.append(
                 [eval_info["test_acc"], eval_info["test_auc"], eval_info["test_f1"], eval_info["test_sen"],
                  eval_info["test_spe"]])
+            if best_val_loss > eval_info["val_loss"]:
+                best_val_loss = eval_info["val_loss"]
+                model_path = os.path.join(args.res_dir, 'gcn_state_dict_%s_fold_%d.pt' % (result_file_name, fold))
+                torch.save(model.state_dict(), model_path)
 
         if logger is not None:
             logger(log)
@@ -145,7 +155,8 @@ def cross_validation_without_val_set( args,dataset,
                                       device,
                                       logger=None,
                                       result_path=None,
-                                      pre_transform=None):
+                                      pre_transform=None,
+                                      result_file_name=None):
     test_data = []
     if args.isTestAdnitype:
         train_data, test_data = separate_data_adnitype(dataset, disease_id=args.disease_id4Adnitype, adnitype_id=args.adnitype_id)
@@ -292,7 +303,7 @@ def num_graphs(data):
         return data.x.size(0)
 
 
-def train(model, optimizer, loader, device):
+def train(model, optimizer, loader, device, args):
     model.train()
 
     total_loss = 0
@@ -303,8 +314,8 @@ def train(model, optimizer, loader, device):
         loss_ce = F.nll_loss(out, data.y.view(-1))
         out_prob = model(data, True)
         loss_mi = F.nll_loss(out_prob, data.y.view(-1))
-        loss_prob = model.loss_probability(data.x, data.edge_index, data.edge_attr, hp)
-        loss = hp.lamda_ce * loss_ce + loss_prob + hp.lamda_mi * loss_mi
+        loss_prob = model.loss_probability(data.x, data.edge_index, data.edge_attr, args)
+        loss = args.lamda_ce * loss_ce + loss_prob + args.lamda_mi * loss_mi
         # loss = F.nll_loss(out, data.y.view(-1))
         loss.backward()
         total_loss += loss.detach().cpu().item() * num_graphs(data)
@@ -312,7 +323,7 @@ def train(model, optimizer, loader, device):
     return total_loss / len(loader.dataset)
 
 
-def eval_acc(model, loader, device):
+def eval_acc(model, loader, device, args):
     model.eval()
 
     correct = 0
@@ -324,7 +335,7 @@ def eval_acc(model, loader, device):
     return correct / len(loader.dataset)
 
 
-def eval_loss(model, loader, device):
+def eval_loss(model, loader, device, args):
     model.eval()
 
     loss = 0
@@ -339,11 +350,11 @@ def eval_loss(model, loader, device):
         loss_mi = F.nll_loss(out_prob, data.y.view(-1))
         # all_scores.append(out_prob[:,1].cpu().detach())
         # pred_y = out_prob.data.max(1, keepdim=True)[1]
-        loss_prob = model.loss_probability(data.x, data.edge_index, data.edge_attr, hp)
-        loss += (hp.lamda_ce * loss_ce + loss_prob + hp.lamda_mi * loss_mi).cpu().item() * num_graphs(data)
+        loss_prob = model.loss_probability(data.x, data.edge_index, data.edge_attr, args)
+        loss += (args.lamda_ce * loss_ce + loss_prob + args.lamda_mi * loss_mi).cpu().item() * num_graphs(data)
     return loss / len(loader.dataset)
 
-def eval_scores(model, loader, device):
+def eval_scores(model, loader, device, args):
     model.eval()
     true_label = []
     pred_label = []

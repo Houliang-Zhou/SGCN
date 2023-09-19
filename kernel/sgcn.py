@@ -7,22 +7,27 @@ from torch.nn.parameter import Parameter, UninitializedParameter
 from torch.nn import init
 from torch_geometric.nn import GATConv, global_mean_pool
 from torch.nn import Linear
+from torch_geometric.nn import global_mean_pool as gap, global_max_pool as gmp
 
 class SGCN_GAT(torch.nn.Module):
 
-    def __init__(self, dataset, num_layers, hidden, *args, hidden_linear=64, rois=90, H_0=3, **kwargs):
+    def __init__(self, dataset, num_layers, hidden, *args, hidden_linear=64, rois=90, num_features=3, num_classes=2, pooling="concat", **kwargs):
         super(SGCN_GAT, self).__init__()
         self.input = None
         self.final_conv_acts = None
         self.final_conv_grads = None
         self.rois = rois
-        self.prob_dim = H_0
-        self.conv1 = GATConv(dataset.num_features, hidden, edge_dim=1)
+        self.prob_dim = num_features
+        self.conv1 = GATConv(num_features, hidden, edge_dim=1)
         self.convs = torch.nn.ModuleList()
         for i in range(num_layers - 1):
             self.convs.append(GATConv(hidden, hidden, edge_dim=1))
-        self.lin1 = torch.nn.Linear(90 * num_layers * hidden, hidden_linear)
-        self.lin2 = Linear(hidden_linear, dataset.num_classes)
+        if pooling=="concat":
+            gcn_out_dim = rois * num_layers * hidden
+        elif pooling=="sum":
+            gcn_out_dim = 2 * num_layers * hidden
+        self.lin1 = torch.nn.Linear(gcn_out_dim, hidden_linear)
+        self.lin2 = Linear(hidden_linear, num_classes)
 
         self.prob = Parameter(torch.zeros((self.rois, self.prob_dim)))  # *0.5
         # init.kaiming_uniform_(self.prob, a=math.sqrt(5))
@@ -107,11 +112,14 @@ class SGCN_GAT(torch.nn.Module):
 
         x = torch.cat(xs, dim=1)
 
-        fill_value = x.min().item() - 1
-        batch_x, _ = to_dense_batch(x, batch, fill_value)
-        B, N, D = batch_x.size()
-        z2 = batch_x.view(B, -1)
-        x = z2
+        if self.pooling == "concat":
+            fill_value = x.min().item() - 1
+            batch_x, _ = to_dense_batch(x, batch, fill_value)
+            B, N, D = batch_x.size()
+            z2 = batch_x.view(B, -1)
+            x = z2
+        elif self.pooling == "sum":
+            x = torch.cat([gmp(x, batch), gap(x, batch)], dim=1)
 
         x = F.relu(self.lin1(x))
         x = F.dropout(x, p=0.5, training=self.training)
@@ -124,18 +132,24 @@ class SGCN_GAT(torch.nn.Module):
 
 class SGCN_GCN(torch.nn.Module):
 
-    def __init__(self, dataset, num_layers, hidden, *args, hidden_linear=64, rois=90, H_0=3, num_features=3, num_classes=2, **kwargs):
+    def __init__(self, dataset, num_layers, hidden, *args, hidden_linear=64, rois=90, num_features=3, num_classes=2, pooling="concat", **kwargs):
         super(SGCN_GCN, self).__init__()
         self.input = None
         self.final_conv_acts = None
         self.final_conv_grads = None
         self.rois = rois
-        self.prob_dim = H_0
+        self.prob_dim = num_features
         self.conv1 = GCNConv(num_features, hidden)
         self.convs = torch.nn.ModuleList()
         for i in range(num_layers - 1):
             self.convs.append(GCNConv(hidden, hidden))
-        self.lin1 = torch.nn.Linear(90 * num_layers * hidden, hidden_linear)
+        self.pooling=pooling
+        if pooling=="concat":
+            gcn_out_dim = rois * num_layers * hidden
+        elif pooling=="sum":
+            gcn_out_dim = 2 * num_layers * hidden
+
+        self.lin1 = torch.nn.Linear(gcn_out_dim, hidden_linear)
         self.lin2 = Linear(hidden_linear, num_classes)
 
         self.prob = Parameter(torch.zeros((self.rois, self.prob_dim)))
@@ -218,11 +232,14 @@ class SGCN_GCN(torch.nn.Module):
 
         x = torch.cat(xs, dim=1)
 
-        fill_value = x.min().item() - 1
-        batch_x, _ = to_dense_batch(x, batch, fill_value)
-        B, N, D = batch_x.size()
-        z2 = batch_x.view(B, -1)
-        x = z2
+        if self.pooling=="concat":
+            fill_value = x.min().item() - 1
+            batch_x, _ = to_dense_batch(x, batch, fill_value)
+            B, N, D = batch_x.size()
+            z2 = batch_x.view(B, -1)
+            x = z2
+        elif self.pooling=="sum":
+            x = torch.cat([gmp(x, batch), gap(x, batch)], dim=1)
 
         x = F.relu(self.lin1(x))
         x = F.dropout(x, p=0.5, training=self.training)
