@@ -6,6 +6,7 @@
 The whole implementation is built upon [PyTorch](https://pytorch.org) and [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/en/latest/)
 
 **conda**
+
 See the `environment.yml` for environment configuration. 
 ```bash
 conda env create -f environment.yml
@@ -16,11 +17,12 @@ To install pyg library, [please refer to the document](https://pytorch-geometric
 
 ### Dataset 
 **ADNI**
+
 We download this dataset from [here](https://adni.loni.usc.edu/data-samples/access-data/).
 We treat multi-modal imaging scans as a brain graph.
 
 ### How to run classification?
-Training and testing are integrated in file `main.py`. To run
+The whole training framework is integrated in file `main.py`. To run
 ```
 python main.py 
 ```
