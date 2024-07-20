@@ -30,3 +30,16 @@ You can also specify the learning hyperparameters to run
 ```
 python main.py --disease_id 0 --epochs 200 --lr 0.001 --search --cuda 0
 ```
+
+## Citation
+If you find the code and dataset useful, please cite our paper.
+```latex
+@inproceedings{zhou2022sparse,
+  title={Sparse interpretation of graph convolutional networks for multi-modal diagnosis of alzheimer’s disease},
+  author={Zhou, Houliang and Zhang, Yu and Chen, Brian Y and Shen, Li and He, Lifang},
+  booktitle={International Conference on Medical Image Computing and Computer-Assisted Intervention},
+  pages={469--478},
+  year={2022},
+  organization={Springer}
+}
+```
