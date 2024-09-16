@@ -330,7 +330,7 @@ def eval_acc(model, loader, device, args):
     for data in loader:
         data = data.to(device)
         with torch.no_grad():
-            pred = model(data).max(1)[1]
+            pred = model(data, True).max(1)[1]
         correct += pred.eq(data.y.view(-1)).sum().item()
     return correct / len(loader.dataset)
 
@@ -363,7 +363,7 @@ def eval_scores(model, loader, device, args):
     for data in loader:
         data = data.to(device)
         with torch.no_grad():
-            out = model(data)
+            out = model(data, True)
             all_scores.append(out[:, 1].cpu().detach())
             pred = out.max(1)[1]
         correct += pred.eq(data.y.view(-1)).sum().item()

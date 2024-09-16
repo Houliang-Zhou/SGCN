@@ -72,7 +72,7 @@ parser.add_argument('--lamda_x_ent', type=float, default=0.1)
 parser.add_argument('--lamda_e_ent', type=float, default=0.1)
 parser.add_argument('--lamda_mi', type=float, default=1.0)
 parser.add_argument('--lamda_ce', type=float, default=1.0)
-parser.add_argument('--pooling', type=str, default='concat')
+parser.add_argument('--pooling', type=str, default='concat', help='concat or sum')
 
 # GNN settings.
 parser.add_argument('--model', type=str, default='SGCN_GCN',
